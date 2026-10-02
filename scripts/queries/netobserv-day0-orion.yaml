@@ -1,0 +1,134 @@
+tests:
+  # Trend analysis for cluster resource usage WITHOUT NetObserv installed.
+  # Matches day0 measurements where netobserv_enabled=false (baseline runs).
+  # Detects regressions in cluster baseline over time independent of NetObserv.
+  - name: netobserv-day0-baseline-AWS-{{ workers }}w
+    version_field: "ocp"
+    timestamp: iso_timestamp
+    metadata:
+      benchmark.keyword: netobserv-day0
+      netobserv_enabled: "false"
+      ocp: "{{ version }}"
+      jobType: "{{ jobtype }}"
+      workerNodesCount: {{ workers }}
+    metrics:
+      - name: TotalClusterCPUUsage
+        metric_name: TotalClusterCPUUsage
+        metric_of_interest: value
+        agg:
+          value: cluster_cpu
+          agg_type: avg
+        direction: 1
+        threshold: 10
+
+      - name: TotalClusterRSSUsage
+        metric_name: TotalClusterRSSUsage
+        metric_of_interest: value
+        agg:
+          value: cluster_rss
+          agg_type: avg
+        direction: 1
+        threshold: 10
+
+      - name: TotalNetworkBytesOut
+        metric_name: TotalNetworkBytesOut
+        metric_of_interest: value
+        agg:
+          value: network_bytes_out
+          agg_type: avg
+        direction: 1
+        threshold: 20
+
+      - name: TotalNetworkBytesIn
+        metric_name: TotalNetworkBytesIn
+        metric_of_interest: value
+        agg:
+          value: network_bytes_in
+          agg_type: avg
+        direction: 1
+        threshold: 20
+
+  # Trend analysis for cluster resource usage WITH NetObserv installed via CNO.
+  # Matches day0 measurements where netobserv_enabled=true.
+  # Detects regressions in the overhead NetObserv adds to the cluster over time.
+  - name: netobserv-day0-with-noo-AWS-{{ workers }}w
+    version_field: "ocp"
+    timestamp: iso_timestamp
+    metadata:
+      benchmark.keyword: netobserv-day0
+      netobserv_enabled: "true"
+      ocp: "{{ version }}"
+      jobType: "{{ jobtype }}"
+      workerNodesCount: {{ workers }}
+    metrics:
+      - name: TotalClusterCPUUsage
+        metric_name: TotalClusterCPUUsage
+        metric_of_interest: value
+        agg:
+          value: cluster_cpu
+          agg_type: avg
+        direction: 1
+        threshold: 10
+
+      - name: TotalClusterRSSUsage
+        metric_name: TotalClusterRSSUsage
+        metric_of_interest: value
+        agg:
+          value: cluster_rss
+          agg_type: avg
+        direction: 1
+        threshold: 10
+
+      - name: TotalNetworkBytesOut
+        metric_name: TotalNetworkBytesOut
+        metric_of_interest: value
+        agg:
+          value: network_bytes_out
+          agg_type: avg
+        direction: 1
+        threshold: 20
+
+      - name: TotalNetworkBytesIn
+        metric_name: TotalNetworkBytesIn
+        metric_of_interest: value
+        agg:
+          value: network_bytes_in
+          agg_type: avg
+        direction: 1
+        threshold: 20
+
+      - name: TotalNetObservCPUUsage
+        metric_name: TotalNetObservCPUUsage
+        metric_of_interest: value
+        agg:
+          value: netobserv_cpu
+          agg_type: avg
+        direction: 1
+        threshold: 10
+
+      - name: TotalNetObservRSSUsage
+        metric_name: TotalNetObservRSSUsage
+        metric_of_interest: value
+        agg:
+          value: netobserv_rss
+          agg_type: avg
+        direction: 1
+        threshold: 10
+
+      - name: NetObservClusterCPUPercentUtil
+        metric_name: NetObservClusterCPUPercentUtil
+        metric_of_interest: value
+        agg:
+          value: netobserv_cluster_cpu_percent
+          agg_type: avg
+        direction: 1
+        threshold: 5
+
+      - name: NetObservClusterMemPercentUtil
+        metric_name: NetObservClusterMemPercentUtil
+        metric_of_interest: value
+        agg:
+          value: netobserv_cluster_mem_percent
+          agg_type: avg
+        direction: 1
+        threshold: 5

@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 
-import os
-import sys
-import json
-import yaml
-import uuid
-import time
-import ssl
-import urllib3
-import pathlib
-import logging
 import argparse
-import requests
-from datetime import datetime, timezone
+import datetime
+import json
+import logging
+import os
+import pathlib
+import ssl
 import subprocess
+import sys
+import time
+import uuid
+
 import coloredlogs
+import requests
+import urllib3
+import yaml
 from elasticsearch import Elasticsearch
 
 # SSL certificate configuration
@@ -22,7 +23,9 @@ from elasticsearch import Elasticsearch
 # For custom CA: set ES_CA_CERT or THANOS_CA_CERT env vars
 # Set *_VERIFY_CERTS=false to disable verification (not recommended)
 SA_CA_CERT = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-ES_CA_CERT = os.getenv("ES_CA_CERT")  # path to custom CA for ES, or None to use system CAs
+ES_CA_CERT = os.getenv(
+    "ES_CA_CERT"
+)  # path to custom CA for ES, or None to use system CAs
 THANOS_CA_CERT = os.getenv("THANOS_CA_CERT", SA_CA_CERT)  # defaults to in-cluster SA CA
 ES_VERIFY_CERTS = os.getenv("ES_VERIFY_CERTS", "true").lower() != "false"
 THANOS_VERIFY_CERTS = os.getenv("THANOS_VERIFY_CERTS", "true").lower() != "false"
@@ -51,6 +54,11 @@ STEP = None
 
 NOO_BUNDLE_VERSION = None
 UUID = None
+# day0 measurement mode globals
+NETOBSERV_ENABLED = True  # False when measuring before NetObserv is installed (derived from extra_metadata)
+EXTRA_METADATA = (
+    {}
+)  # dict loaded from --extra-metadata JSON file, merged into every ES metadata doc
 SUPPORTED_WORKLOADS = [
     "node-density-heavy",
     "ingress-perf",
@@ -78,18 +86,23 @@ def get_iso_timestamp(unix_timestamp):
     """takes in a unix timestamp and returns an iso timestamp representation
     iso timestamp will be Elasticsearch compatible
     """
-    return datetime.utcfromtimestamp(int(unix_timestamp)).isoformat() + "Z"
+    return (
+        datetime.datetime.fromtimestamp(int(unix_timestamp), datetime.UTC)
+        .replace(tzinfo=None)
+        .isoformat()
+        + "Z"
+    )
 
 
 def get_epoch_from_iso(isotime):
     """
     Takes ISO timestamp in format '%Y-%m-%dT%H:%M:%SZ' and returns epoch seconds
     """
-    utc_dt = datetime.strptime(isotime, "%Y-%m-%dT%H:%M:%SZ").replace(
-        tzinfo=timezone.utc
+    utc_dt = datetime.datetime.strptime(isotime, "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=datetime.UTC
     )
     timestamp = (
-        utc_dt - datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        utc_dt - datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=datetime.UTC)
     ).total_seconds()
     return int(timestamp)
 
@@ -123,7 +136,7 @@ def process_query(uuid, metric_name, query, raw_data):
                 )
 
     except Exception as e:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         logging.error(f"Error cleaning {metric_name} data from query {query}: {e}")
         logging.error(f"raw_data: {raw_data}")
         logging.error(
@@ -148,8 +161,14 @@ def run_query(metric_name, query, start_time, end_time):
     params = {"query": query, "start": start_time, "end": end_time, "step": STEP}
 
     # make request and return data
-    thanos_verify = THANOS_CA_CERT if (THANOS_VERIFY_CERTS and os.path.exists(THANOS_CA_CERT)) else THANOS_VERIFY_CERTS
-    data = requests.get(endpoint, headers=headers, params=params, verify=thanos_verify, timeout=30)
+    thanos_verify = (
+        THANOS_CA_CERT
+        if (THANOS_VERIFY_CERTS and os.path.exists(THANOS_CA_CERT))
+        else THANOS_VERIFY_CERTS
+    )
+    data = requests.get(
+        endpoint, headers=headers, params=params, verify=thanos_verify, timeout=30
+    )
     if data.status_code != 200:
         raise Exception(
             f"metricName '{metric_name}' with query '{query}'to fetch Prometheus data failed due to: {data.status_code} {data.reason}"
@@ -214,6 +233,57 @@ def run_commands(commands, outputs={}):
     return outputs
 
 
+def get_day0_env_stub():
+    """Returns a minimal metadata document for day0 measurements when NetObserv is not installed.
+    Used when --netobserv-enabled=false to avoid calling oc get flowcollector which would fail.
+    The build_id and measurement_label fields allow correlating with/without runs from the same job.
+    """
+    iso_timestamp = get_iso_timestamp(START_TIME)
+    ocp_version = subprocess.run(
+        [
+            "oc",
+            "get",
+            "co/authentication",
+            '-o=jsonpath="{.status.versions[0].version}"',
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout.strip('"')
+    arch = subprocess.run(
+        ["oc", "get", "node", '-o=jsonpath="{.items[0].status.nodeInfo.architecture}"'],
+        capture_output=True,
+        text=True,
+    ).stdout.strip('"')
+    doc = {
+        "uuid": UUID,
+        "jira": JIRA if JIRA else "N/A",
+        "metric_name": "netobservEnv",
+        "data_type": "metadata",
+        "iso_timestamp": iso_timestamp,
+        "noo_bundle_version": NOO_BUNDLE_VERSION if NOO_BUNDLE_VERSION else "N/A",
+        "uuid_replaced_info": UUID_REPLACEMENT_STR,
+        "ocp": ocp_version,
+        "arch": arch,
+        # fields not applicable without NetObserv
+        "release": "N/A",
+        "deploymentModel": "N/A",
+        "flp_kind": "N/A",
+        "agent": "N/A",
+        "sampling": "N/A",
+        "cache_active_time": "N/A",
+        "cache_max_flows": "N/A",
+        "loki": "N/A",
+        "kafka_replicas": "N/A",
+        "kafka_brokers": "N/A",
+        "aws_s3_bucket_name": "N/A",
+        "aws_s3_bucket_usage": "N/A",
+        "noo_start_time": get_iso_timestamp(START_TIME),
+    }
+    # Merge all extra metadata fields (benchmark, job_type, build_id, etc.) from JSON file
+    doc.update(EXTRA_METADATA)
+    return doc
+
+
 def get_netobserv_env_info():
     """gathers information about netobserv operator env
     returns info dictionary where key is identifier and value is command output
@@ -229,6 +299,7 @@ def get_netobserv_env_info():
         "iso_timestamp": iso_timestamp,
         "noo_bundle_version": NOO_BUNDLE_VERSION,
         "uuid_replaced_info": UUID_REPLACEMENT_STR,
+        **EXTRA_METADATA,
     }
     base_commands = {
         "ocp": 'oc get co/authentication -o=jsonpath="{.status.versions[0].version}"',
@@ -339,7 +410,9 @@ def create_es_client():
         kwargs["verify_certs"] = False
     elif ES_CA_CERT and os.path.exists(ES_CA_CERT):
         kwargs["ca_certs"] = ES_CA_CERT
-    return Elasticsearch([f"https://{ES_USERNAME}:{ES_PASSWORD}@{ES_URL}:443"], **kwargs)
+    return Elasticsearch(
+        [f"https://{ES_USERNAME}:{ES_PASSWORD}@{ES_URL}:443"], **kwargs
+    )
 
 
 def upload_data_to_elasticsearch():
@@ -518,28 +591,37 @@ def get_prom_metrics_queries(noo_start_time):
 
 
 def main():
+    if not NETOBSERV_ENABLED:
+        # Day0 baseline mode: NetObserv is not installed.
+        # Skip flowcollector queries; write a stub metadata doc instead.
+        logging.info(
+            "NETOBSERV_ENABLED=false: skipping NetObserv env queries, using stub metadata"
+        )
+        RESULTS["netobserv_env"] = get_day0_env_stub()
+        # Measure only the queries from the provided YAML file (cluster-level metrics).
+        update_results_with_metrics_data(QUERIES, START_TIME, END_TIME)
+    else:
+        # Standard mode (or day0 with-netobserv): NetObserv is installed.
+        RESULTS["netobserv_env"] = get_netobserv_env_info()
 
-    # get netobserv env data
-    RESULTS["netobserv_env"] = get_netobserv_env_info()
+        noo_start_time_epoch = get_epoch_from_iso(
+            RESULTS["netobserv_env"]["noo_start_time"]
+        )
 
-    noo_start_time_epoch = get_epoch_from_iso(
-        RESULTS["netobserv_env"]["noo_start_time"]
-    )
+        # measure prometheus impact with start time as NOO pod start time
+        prom_impact_queries = get_prom_metrics_queries(noo_start_time_epoch)
+        update_results_with_metrics_data(
+            prom_impact_queries, noo_start_time_epoch, END_TIME
+        )
 
-    # measure prometheus impact with start time as NOO pod start time
-    prom_impact_queries = get_prom_metrics_queries(noo_start_time_epoch)
-    update_results_with_metrics_data(
-        prom_impact_queries, noo_start_time_epoch, END_TIME
-    )
-
-    # measure other metrics with start time as workload start time
-    update_results_with_metrics_data(QUERIES, START_TIME, END_TIME)
+        # measure other metrics with start time as workload start time
+        update_results_with_metrics_data(QUERIES, START_TIME, END_TIME)
 
     # log success if no issues
     logging.info(f"Data captured successfully")
 
     # either dump data locally or upload it to Elasticsearch
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     dump_data_locally(timestamp)
     logging.info(f"Data written to {DATA_DIR}/data_{timestamp}.json")
@@ -611,6 +693,14 @@ if __name__ == "__main__":
         "--noo-bundle-version",
         type=str,
         help="NOO Operator bundle associated with the run",
+    )
+    standard.add_argument(
+        "--extra-metadata",
+        type=str,
+        default=None,
+        help="Path to a JSON file whose key-value pairs are merged into the ES metadata "
+        "document. Use this to pass benchmark, build_id, job_type, measurement_label, "
+        "etc. without individual args. All fields are stored verbatim in ES.",
     )
 
     # set upload mode flags
@@ -705,13 +795,13 @@ if __name__ == "__main__":
     else:
         logging.info(
             "Parsed Start Time: "
-            + datetime.utcfromtimestamp(int(START_TIME)).strftime(
+            + datetime.datetime.fromtimestamp(int(START_TIME)).strftime(
                 "%I:%M%p%Z UTC on %m/%d/%Y"
             )
         )
         logging.info(
             "Parsed End Time:   "
-            + datetime.utcfromtimestamp(int(END_TIME)).strftime(
+            + datetime.datetime.fromtimestamp(int(END_TIME)).strftime(
                 "%I:%M%p%Z UTC on %m/%d/%Y"
             )
         )
@@ -740,14 +830,35 @@ if __name__ == "__main__":
     else:
         logging.info(f"Associating run with Jira ticket {JIRA}")
 
+    # day0 measurement mode globals
+    if args.extra_metadata:
+        try:
+            with open(args.extra_metadata) as f:
+                EXTRA_METADATA = json.load(f)
+            logging.info(
+                f"Extra metadata loaded from {args.extra_metadata}: {EXTRA_METADATA}"
+            )
+        except Exception as e:
+            logging.error(
+                f"Failed to load --extra-metadata file {args.extra_metadata}: {e}"
+            )
+            sys.exit(1)
+    NETOBSERV_ENABLED = EXTRA_METADATA.get("netobserv_enabled", True)
+    logging.info(f"NETOBSERV_ENABLED: {NETOBSERV_ENABLED}")
+
     # get YAML file with queries and set queries constant with data from YAML file
+    # Supports absolute paths (e.g. downloaded to ARTIFACT_DIR) or bare filenames
+    # resolved relative to scripts/queries/ as before.
     YAML_FILE = args.yaml_file
     logging.info(f"YAML_FILE: {YAML_FILE}")
+    yaml_path = (
+        YAML_FILE if os.path.isabs(YAML_FILE) else SCRIPT_DIR + "/queries/" + YAML_FILE
+    )
     try:
-        with open(SCRIPT_DIR + "/queries/" + YAML_FILE, "r") as yaml_file:
+        with open(yaml_path, "r") as yaml_file:
             QUERIES = yaml.safe_load(yaml_file)
     except Exception as e:
-        logging.error(f"Failed to read YAML file {YAML_FILE}: {e}")
+        logging.error(f"Failed to read YAML file {yaml_path}: {e}")
         sys.exit(1)
 
     # get thanos URL from cluster
