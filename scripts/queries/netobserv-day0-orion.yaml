@@ -21,8 +21,8 @@ tests:
         direction: 1
         threshold: 10
 
-      - name: TotalClusterRSSUsage
-        metric_name: TotalClusterRSSUsage
+      - name: TotalClusterMemoryUsage
+        metric_name: TotalClusterMemoryUsage
         metric_of_interest: value
         agg:
           value: cluster_rss
@@ -70,8 +70,8 @@ tests:
         direction: 1
         threshold: 10
 
-      - name: TotalClusterRSSUsage
-        metric_name: TotalClusterRSSUsage
+      - name: TotalClusterMemoryUsage
+        metric_name: TotalClusterMemoryUsage
         metric_of_interest: value
         agg:
           value: cluster_rss
