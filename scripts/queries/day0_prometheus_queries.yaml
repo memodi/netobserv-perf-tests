@@ -15,9 +15,9 @@
 - query: sum(label_replace(cluster:cpu_usage_cores:sum{prometheus="openshift-monitoring/k8s"}, "resource", "cluster_cpu_usage", "prometheus", ".*")) by (resource)
   metricName: TotalClusterCPUUsage
 
-# Total Cluster Memory RSS Usage
+# Total Cluster Memory Usage
 - query: sum(label_replace(cluster:memory_usage_bytes:sum{prometheus="openshift-monitoring/k8s"}, "resource", "cluster_memory_usage", "prometheus", ".*")) by (resource)
-  metricName: TotalClusterRSSUsage
+  metricName: TotalClusterMemoryUsage
 
 # Total Network Transmit bytes/sec
 - query: sum(instance:node_network_transmit_bytes_excluding_lo:rate1m * on(instance) group_left(role) (label_replace(max by (node) (kube_node_role{role=~".+"}), "instance", "$1", "node", "(.*)")))

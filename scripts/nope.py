@@ -87,7 +87,7 @@ def get_iso_timestamp(unix_timestamp):
     iso timestamp will be Elasticsearch compatible
     """
     return (
-        datetime.datetime.fromtimestamp(int(unix_timestamp), datetime.UTC)
+        datetime.datetime.fromtimestamp(int(unix_timestamp), datetime.timezone.utc)
         .replace(tzinfo=None)
         .isoformat()
         + "Z"
@@ -99,10 +99,10 @@ def get_epoch_from_iso(isotime):
     Takes ISO timestamp in format '%Y-%m-%dT%H:%M:%SZ' and returns epoch seconds
     """
     utc_dt = datetime.datetime.strptime(isotime, "%Y-%m-%dT%H:%M:%SZ").replace(
-        tzinfo=datetime.UTC
+        tzinfo=datetime.timezone.utc
     )
     timestamp = (
-        utc_dt - datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=datetime.UTC)
+        utc_dt - datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
     ).total_seconds()
     return int(timestamp)
 
@@ -239,21 +239,43 @@ def get_day0_env_stub():
     The build_id and measurement_label fields allow correlating with/without runs from the same job.
     """
     iso_timestamp = get_iso_timestamp(START_TIME)
-    ocp_version = subprocess.run(
-        [
-            "oc",
-            "get",
-            "co/authentication",
-            '-o=jsonpath="{.status.versions[0].version}"',
-        ],
-        capture_output=True,
-        text=True,
-    ).stdout.strip('"')
-    arch = subprocess.run(
-        ["oc", "get", "node", '-o=jsonpath="{.items[0].status.nodeInfo.architecture}"'],
-        capture_output=True,
-        text=True,
-    ).stdout.strip('"')
+    ocp_version = ""
+    try:
+        ocp_version = subprocess.run(
+            [
+                "oc",
+                "get",
+                "co/authentication",
+                '-o=jsonpath="{.status.versions[0].version}"',
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip('"')
+    except subprocess.CalledProcessError as e:
+        logging.fatal(
+            f"Command to get version from co/authentication failed with exit code {e.returncode} and error {e.stderr}"
+        )
+        sys.exit(1)
+
+    arch = ""
+    try:
+        arch = subprocess.run(
+            [
+                "oc",
+                "get",
+                "node",
+                '-o=jsonpath="{.items[0].status.nodeInfo.architecture}"',
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip('"')
+    except subprocess.CalledProcessError as e:
+        logging.error(
+            f"Command to get node failed with exit code {e.returncode} and error {e.stderr}"
+        )
+
     doc = {
         "uuid": UUID,
         "jira": JIRA if JIRA else "N/A",
@@ -280,7 +302,10 @@ def get_day0_env_stub():
         "noo_start_time": get_iso_timestamp(START_TIME),
     }
     # Merge all extra metadata fields (benchmark, job_type, build_id, etc.) from JSON file
-    doc.update(EXTRA_METADATA)
+    for k in EXTRA_METADATA.keys():
+        # reject keys that are already in doc
+        if k not in doc:
+            doc.update({k: EXTRA_METADATA[k]})
     return doc
 
 
