@@ -258,7 +258,7 @@ def get_day0_env_stub():
         )
         sys.exit(1)
 
-    arch = ""
+    arch = "N/A"
     try:
         arch = subprocess.run(
             [
@@ -820,15 +820,15 @@ if __name__ == "__main__":
     else:
         logging.info(
             "Parsed Start Time: "
-            + datetime.datetime.fromtimestamp(int(START_TIME)).strftime(
-                "%I:%M%p%Z UTC on %m/%d/%Y"
-            )
+            + datetime.datetime.fromtimestamp(
+                int(START_TIME), datetime.timezone.utc
+            ).strftime("%I:%M%p%Z UTC on %m/%d/%Y")
         )
         logging.info(
             "Parsed End Time:   "
-            + datetime.datetime.fromtimestamp(int(END_TIME)).strftime(
-                "%I:%M%p%Z UTC on %m/%d/%Y"
-            )
+            + datetime.datetime.fromtimestamp(
+                int(END_TIME), datetime.timezone.utc
+            ).strftime("%I:%M%p%Z UTC on %m/%d/%Y")
         )
         logging.info("Step is:           " + STEP)
 
