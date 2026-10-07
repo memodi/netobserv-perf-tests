@@ -56,6 +56,7 @@ NOO_BUNDLE_VERSION = None
 UUID = None
 # day0 measurement mode globals
 NETOBSERV_ENABLED = True  # False when measuring before NetObserv is installed (derived from extra_metadata)
+NETOBSERV_OPERATOR_NS = None
 EXTRA_METADATA = (
     {}
 )  # dict loaded from --extra-metadata JSON file, merged into every ES metadata doc
@@ -355,6 +356,43 @@ def get_netobserv_env_info():
     s3_bucket_name = info["aws_s3_bucket_name"]
     logging.debug(f"Found AWS S3 bucket name {s3_bucket_name}")
 
+    # get namespace where netobserv operator is installed
+    cmd = ["oc", "get", "csv", "--all-namespaces", "-o", "json"]
+    try:
+        csv_data = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=300,
+        )
+        data = json.loads(csv_data.stdout)
+        for item in data.get("items", []):
+            metadata = item.get("metadata", {})
+            status = item.get("status", {})
+
+            # Match the specific CSV name
+            if metadata and metadata.get("name") == info["release"]:
+                # Exclude OLM copies by ensuring status.reason is not 'Copied'
+                if status.get("reason") != "Copied":
+                    global NETOBSERV_OPERATOR_NS
+                    NETOBSERV_OPERATOR_NS = metadata.get("namespace")
+                    logging.debug(
+                        f"Found true installation namespace: {NETOBSERV_OPERATOR_NS}"
+                    )
+    except subprocess.CalledProcessError as e:
+        logging.error(
+            f"Command to get netobserv-operator ns failed with exit code {e.returncode} and error {e.stderr}"
+        )
+        sys.exit(1)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+        logging.error(f"Failed to get netobserv-operator ns: {e}")
+        sys.exit(1)
+
+    if not NETOBSERV_OPERATOR_NS:
+        logging.error(f"Could not find the namespace of CSV '{info['release']}'")
+        sys.exit(1)
+
     # noo_start_time could have multiple start time values if subscribed to operator more than once
     additional_commands = {
         "sampling": f'oc get flowcollector -o jsonpath="{{.items[*].spec.agent.{agent}.sampling}}"',
@@ -363,7 +401,8 @@ def get_netobserv_env_info():
         "aws_s3_bucket_usage": f"aws s3 ls --summarize --human-readable --recursive s3://{s3_bucket_name} | tail -2",
         "noo_start_time": "oc get csv/"
         + info["release"]
-        + " -o jsonpath='{.status.conditions[?(@.phase==\"Succeeded\")].lastUpdateTime}' -n openshift-netobserv-operator"
+        + " -o jsonpath='{.status.conditions[?(@.phase==\"Succeeded\")].lastUpdateTime}' -n "
+        + NETOBSERV_OPERATOR_NS
         + " | awk '{print $NF}'",
     }
     if deploymentModel == "kafka":
@@ -628,7 +667,6 @@ def main():
     else:
         # Standard mode (or day0 with-netobserv): NetObserv is installed.
         RESULTS["netobserv_env"] = get_netobserv_env_info()
-
         noo_start_time_epoch = get_epoch_from_iso(
             RESULTS["netobserv_env"]["noo_start_time"]
         )
