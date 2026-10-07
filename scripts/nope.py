@@ -364,6 +364,7 @@ def get_netobserv_env_info():
             capture_output=True,
             text=True,
             check=True,
+            timeout=300,
         )
         data = json.loads(csv_data.stdout)
         for item in data.get("items", []):
@@ -383,6 +384,13 @@ def get_netobserv_env_info():
         logging.error(
             f"Command to get netobserv-operator ns failed with exit code {e.returncode} and error {e.stderr}"
         )
+        sys.exit(1)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+        logging.error(f"Failed to get netobserv-operator ns: {e}")
+        sys.exit(1)
+
+    if not NETOBSERV_OPERATOR_NS:
+        logging.error(f"Could not find the namespace of CSV '{info['release']}'")
         sys.exit(1)
 
     # noo_start_time could have multiple start time values if subscribed to operator more than once
