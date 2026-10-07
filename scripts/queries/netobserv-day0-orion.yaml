@@ -74,7 +74,7 @@ tests:
         metric_name: TotalClusterMemoryUsage
         metric_of_interest: value
         agg:
-          value: cluster_rss
+          value: cluster_mem
           agg_type: avg
         direction: 1
         threshold: 10
@@ -106,11 +106,11 @@ tests:
         direction: 1
         threshold: 10
 
-      - name: TotalNetObservRSSUsage
-        metric_name: TotalNetObservRSSUsage
+      - name: TotalNetObservMemoryUsage
+        metric_name: TotalNetObservMemoryUsage
         metric_of_interest: value
         agg:
-          value: netobserv_rss
+          value: netobserv_mem
           agg_type: avg
         direction: 1
         threshold: 10
