@@ -53,8 +53,8 @@
   metricName: TotalNetObservCPUUsage
 
 # Total NetObserv RSS memory usage across all netobserv namespaces
-- query: (sum(container_memory_rss{namespace=~".*netobserv.*", container=""}) or on() vector(0))
-  metricName: TotalNetObservRSSUsage
+- query: (sum(container_memory_usage_bytes{namespace=~".*netobserv.*", container=""}) or on() vector(0))
+  metricName: TotalNetObservMemoryUsage
 
 # NetObserv % CPU usage as fraction of total cluster CPU
 - query: sum(label_replace((((sum(namespace:container_cpu_usage:sum{namespace=~".*netobserv.*"})) / on() group_right() cluster:cpu_usage_cores:sum)*100), "resource", "cpu_usage%", "prometheus", ".*")) by (resource)
