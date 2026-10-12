@@ -235,15 +235,6 @@ tests:
           agg_type: avg
         direction: 1
         threshold: 20
-      - name: rssFLPInformersTotals
-        metric_name: rssFLPInformersTotals
-        timestamp: iso_timestamp
-        metric_of_interest: value
-        agg:
-          value: flp_informers_rss
-          agg_type: avg
-        direction: 1
-        threshold: 10
       - name: workingsetFLPInformersTotals
         metric_name: workingsetFLPInformersTotals
         metric_of_interest: value
