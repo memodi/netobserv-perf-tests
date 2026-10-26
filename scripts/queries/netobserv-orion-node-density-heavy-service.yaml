@@ -8,6 +8,7 @@ tests:
       ocpVersion: "{{ version }}"
       jobType: "{{ jobtype }}"
       deployment_model: "{{ deployment_model }}"
+      sampling: 1
     metrics:
       - name: nFlowsProcessedTotals
         metric_name: nFlowsProcessedTotals
